@@ -38,6 +38,14 @@ The design and the roadmap live in the
 | `learn/` | Warm-up exercises before M0: pointers vs values, slice growth, a linked list, a hash map (chaining, FNV-1a). |
 | `deploy/` | systemd unit, `deploy.sh`, and `.env.example`. |
 
+### Reading the log: `chronicle tail`
+
+![chronicle tail: seek to the end of the file, read each event, buffer a partial one until it completes, and wait 500 ms at EOF before polling again; Ctrl-C exits](docs/m0_tail.svg)
+
+`tail` opens the log, seeks to the end, and prints each new event as `serve`
+appends it. A partial event stays in a buffer until the rest arrives. At EOF
+it waits 500 ms, then reads again. Ctrl-C stops it.
+
 ### How it was built
 
 In this order, one small commit per step:

@@ -43,7 +43,8 @@ https://claude.ai/code/artifact/b506277b-93bf-4e40-92e9-61c85b44f2c5
 - Use the Learning output style (set in `.claude/settings.local.json`).
 - Don't write implementation code unless explicitly asked. Instead: explain the concept, name the DDIA chapter, show the relevant standard-library API, review code, suggest tests, and leave TODO(human) markers.
 - Scaffolding (Makefile, configs, test harness scripts) is fine when asked.
-- Every bug fix starts with a failing test. Run `go vet ./...` and `go test -race ./...` before saying anything works.
+- Claude writes all test code (`*_test.go`) in this repo; Gautam writes the implementation. Decided 2026-10-20.
+- Every bug fix starts with a failing test. Run `make test lint` (`go test ./...`, `go vet ./...`, staticcheck) before saying anything works. No `-race`: the Pi's kernel uses 39-bit virtual addresses and ThreadSanitizer needs 48, and there is no CI (decided 2026-10-20).
 - Correct before concurrent: a single-goroutine version must work and be measured before goroutines are added.
 - Point out what Python hid (allocation, copying, slice capacity, byte layout, syscalls) whenever it comes up.
 

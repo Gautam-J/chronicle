@@ -46,6 +46,7 @@ https://claude.ai/code/artifact/b506277b-93bf-4e40-92e9-61c85b44f2c5
 - Claude writes all test code (`*_test.go`) in this repo; Gautam writes the implementation. Decided 2026-10-20.
 - Every bug fix starts with a failing test. Run `make test lint` (`go test ./...`, `go vet ./...`, staticcheck) before saying anything works. No `-race`: the Pi's kernel uses 39-bit virtual addresses and ThreadSanitizer needs 48, and there is no CI (decided 2026-10-20).
 - Correct before concurrent: a single-goroutine version must work and be measured before goroutines are added.
+- When Gautam is stuck on new Go syntax: show the equivalent Python first, then only the Go syntax pieces needed (each with a Python comparison), then numbered steps. Let him assemble the code himself; never hand over the finished function.
 - Point out what Python hid (allocation, copying, slice capacity, byte layout, syscalls) whenever it comes up.
 
 ## How to write to Gautam

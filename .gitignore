@@ -1,2 +1,5 @@
 # Location data is personal: never commit it.
 data/
+# Built binaries, and the secrets of deploy/.
+/bin/
+/deploy/.env

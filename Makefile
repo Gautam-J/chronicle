@@ -1,4 +1,7 @@
-.PHONY: test lint
+.PHONY: test lint build
+
+build:
+	go build -o bin/chronicle ./cmd/chronicle
 
 test:
 	go test ./...

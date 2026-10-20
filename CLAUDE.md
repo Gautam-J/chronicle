@@ -33,6 +33,7 @@ https://claude.ai/code/artifact/b506277b-93bf-4e40-92e9-61c85b44f2c5
   - Password read from an environment variable.
   - The reply is `200` with body `[]`.
   - Each body is appended as one JSON line, plus an `ingest_time`, so lateness can be measured later.
+- **OwnTracks `dump` messages are stored as-is**, even though they contain the HTTP password in `configuration.password`. Gautam accepted this on 2026-10-20; don't raise it again unless the design changes (e.g. backups leave the Pi).
 - **Sequencing:** the tunnel comes after the handler works locally with `curl`.
 - **Third Raft voter:** undecided (laptop or a second VPS).
 - **"Chronicle" is a working name.**

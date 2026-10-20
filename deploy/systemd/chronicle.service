@@ -12,7 +12,7 @@ OnFailure=lifeos-notify@%n.service
 User=gautam
 # systemd reads KEY=value lines; it does not run the file as a shell does.
 EnvironmentFile=/home/gautam/chronicle/deploy/.env
-ExecStart=/home/gautam/chronicle/bin/chronicle
+ExecStart=/home/gautam/chronicle/bin/chronicle serve
 Restart=on-failure
 RestartSec=10
 # The internet reaches this process through the tunnel. It sees only its

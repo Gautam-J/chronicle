@@ -1,0 +1,36 @@
+# Linked into /etc/systemd/system by deploy/deploy.sh.
+[Unit]
+Description=Chronicle server (OwnTracks ingest)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=10
+# Reuses the ntfy alert unit of LifeOS.
+OnFailure=lifeos-notify@%n.service
+
+[Service]
+User=gautam
+# systemd reads KEY=value lines; it does not run the file as a shell does.
+EnvironmentFile=/home/gautam/chronicle/deploy/.env
+ExecStart=/home/gautam/chronicle/bin/chronicle
+Restart=on-failure
+RestartSec=10
+# The internet reaches this process through the tunnel. It sees only its
+# binary, and writes only to /var/lib/chronicle (StateDirectory: systemd
+# creates it, owned by User, before the start). It does not see the rest of
+# the home folder (deploy/.env, SSH keys, the tunnel certificate).
+StateDirectory=chronicle
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/chronicle
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ProtectHome=tmpfs
+BindReadOnlyPaths=/home/gautam/chronicle/bin
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

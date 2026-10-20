@@ -2,10 +2,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"time"
 
@@ -47,7 +50,7 @@ func newMux(store owntracks.Appender, cfg config) http.Handler {
 	return mux
 }
 
-func main() {
+func serve() {
 	cfg, err := loadConfig(os.Getenv)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -77,4 +80,58 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		displayUsage()
+		os.Exit(2)
+	}
+
+	switch os.Args[1] {
+	case "serve":
+		serve()
+	case "tail":
+		path := "data/points.jsonl"
+		if v := os.Getenv("CHRONICLE_DATA"); v != "" {
+			path = v
+		}
+
+		if len(os.Args) > 2 {
+			path = os.Args[2]
+		}
+
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+
+		if err := tailFile(ctx, path, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	default:
+		displayUsage()
+		os.Exit(2)
+	}
+}
+
+func displayUsage() {
+	fmt.Fprintln(os.Stderr, "usage: chronicle serve | tail [path]")
+}
+
+func tailFile(ctx context.Context, path string, out io.Writer) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+	_, err = f.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
+	}
+
+	err = jsonl.Follow(ctx, f, 500*time.Millisecond, func(line []byte) {
+		fmt.Fprintf(out, "%s\n", line)
+	})
+	return err
 }

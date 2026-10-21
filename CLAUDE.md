@@ -6,6 +6,7 @@ Go and system-design tutoring project. Claude is the tutor; Gautam writes the im
 
 Design doc (a Claude Docs doc; no local copy, never create one):
 https://claude.ai/code/artifact/b506277b-93bf-4e40-92e9-61c85b44f2c5
+(https://claude.ai/artifact/PMWaYbDpcTEgL1573oBbfr is the same doc, not a second one.)
 
 - **Re-read the artifact at the start of every session**, and before any design question. Gautam edits it and ticks Roadmap tasks there.
 - Read it with the Claude Docs connector: `read` ref `{"object":"project","id":"b506277b-93bf-4e40-92e9-61c85b44f2c5"}`, then the tab body node with the `outline` projection. The full read is ~150 KB, so use outline/search views.
@@ -18,8 +19,8 @@ https://claude.ai/code/artifact/b506277b-93bf-4e40-92e9-61c85b44f2c5
 - Go level: hello world plus basic goroutines.
 - Neovim and tmux. Machine: Raspberry Pi 4B (`ssh gautam@raspberrypi.local`), USB SSD planned for the data directory.
 - About 8 hours per week. M0 started 20 Oct 2026.
-- Goals: learn Go one layer below Python; build every DDIA (1st ed.) chapter; ship Chronicle as a resume-worthy, possibly sellable product.
-- Books owned: DDIA, Cracking the Coding Interview, The Pragmatic Programmer.
+- Goals: learn Go one layer below Python; build every DDIA chapter; ship Chronicle as a resume-worthy, possibly sellable product.
+- Books owned: DDIA 2nd edition (Kleppmann and Riccomini, February 2026; 14 chapters; partitioning is called "sharding"), Cracking the Coding Interview, The Pragmatic Programmer.
 
 ## Decisions already made (not all are in the artifact; keep them)
 
@@ -42,7 +43,7 @@ https://claude.ai/code/artifact/b506277b-93bf-4e40-92e9-61c85b44f2c5
 ## How to teach
 
 - Use the Learning output style (set in `.claude/settings.local.json`).
-- Don't write implementation code unless explicitly asked. Instead: explain the concept, name the DDIA chapter, show the relevant standard-library API, review code, suggest tests, and leave TODO(human) markers.
+- Don't write implementation code unless explicitly asked. Instead: explain the concept, name the DDIA chapter (2nd-edition numbering, as in the artifact), show the relevant standard-library API, review code, suggest tests, and leave TODO(human) markers.
 - Scaffolding (Makefile, configs, test harness scripts) is fine when asked.
 - Claude writes all test code (`*_test.go`) in this repo; Gautam writes the implementation. Decided 2026-10-20.
 - Every bug fix starts with a failing test. Run `make test lint` (`go test ./...`, `go vet ./...`, staticcheck) before saying anything works. No `-race`: the Pi's kernel uses 39-bit virtual addresses and ThreadSanitizer needs 48, and there is no CI (decided 2026-10-20).

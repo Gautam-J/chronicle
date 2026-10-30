@@ -18,6 +18,7 @@ type fakeLog struct {
 	mu        sync.Mutex
 	events    []string
 	next      uint64
+	synced    uint64 // records covered by the latest successful Sync
 	appendErr error
 	syncErr   error
 
@@ -47,7 +48,17 @@ func (f *fakeLog) Sync() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.events = append(f.events, "sync")
+	if f.syncErr == nil {
+		f.synced = f.next
+	}
 	return f.syncErr
+}
+
+// isSynced reports whether the record at off was covered by a Sync.
+func (f *fakeLog) isSynced(off uint64) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return off < f.synced
 }
 
 func (f *fakeLog) calls() []string {
@@ -60,9 +71,14 @@ func blockingLog() *fakeLog {
 	return &fakeLog{entered: make(chan struct{}, 100), gate: make(chan struct{})}
 }
 
-func startSequencer(t *testing.T, l appender, queue int) *Sequencer {
+// always is the mode the 3b tests were written for: one fsync per record.
+func always(queue int) SequencerOptions {
+	return SequencerOptions{Queue: queue, Mode: DurabilityAlways}
+}
+
+func startSequencer(t *testing.T, l appender, o SequencerOptions) *Sequencer {
 	t.Helper()
-	s := NewSequencer(l, queue)
+	s := NewSequencer(l, o)
 	// A sequencer stuck on an unread reply would make Close hang forever.
 	t.Cleanup(func() { within(t, 2*time.Second, "Close", func() { s.Close() }) })
 	return s
@@ -125,7 +141,7 @@ func waitQueued(t *testing.T, s *Sequencer, n int) {
 
 func TestSequencerAppendsInOrder(t *testing.T) {
 	l := openLog(t, t.TempDir(), Options{})
-	s := startSequencer(t, l, 16)
+	s := startSequencer(t, l, always(16))
 	for want := range uint64(10) {
 		got, err := s.Append(context.Background(), rec(0))
 		if err != nil {
@@ -140,7 +156,7 @@ func TestSequencerAppendsInOrder(t *testing.T) {
 // Mode "always": the caller hears back only after its record was fsynced.
 func TestSequencerSyncsBeforeReply(t *testing.T) {
 	f := &fakeLog{}
-	s := startSequencer(t, f, 16)
+	s := startSequencer(t, f, always(16))
 	for range 3 {
 		if _, err := s.Append(context.Background(), rec(0)); err != nil {
 			t.Fatal(err)
@@ -162,7 +178,7 @@ func TestSequencerReturnsErrors(t *testing.T) {
 		"sync fails":   {syncErr: diskFull},
 	} {
 		t.Run(name, func(t *testing.T) {
-			s := startSequencer(t, f, 16)
+			s := startSequencer(t, f, always(16))
 			if _, err := s.Append(context.Background(), rec(0)); !errors.Is(err, diskFull) {
 				t.Errorf("Append error = %v, want the log's error", err)
 			}
@@ -173,11 +189,16 @@ func TestSequencerReturnsErrors(t *testing.T) {
 // Many writers at once: every record gets a unique offset, and the record
 // stored at each offset is the one whose Append returned that offset.
 func TestSequencerConcurrentWriters(t *testing.T) {
-	// Each Append waits for an fsync (about 5 ms on the Pi's SD card), so
-	// keep the count small: 160 appends take about a second.
+	t.Run("always", func(t *testing.T) { concurrentWriters(t, always(16)) })
+	t.Run("batch", func(t *testing.T) { concurrentWriters(t, SequencerOptions{Queue: 16}) })
+}
+
+func concurrentWriters(t *testing.T, o SequencerOptions) {
+	// In mode always each Append waits for its own fsync (about 5 ms on the
+	// Pi's SD card), so keep the count small: 160 appends take about a second.
 	const writers, each = 8, 20
 	l := openLog(t, t.TempDir(), Options{})
-	s := startSequencer(t, l, 16)
+	s := startSequencer(t, l, o)
 
 	var mu sync.Mutex
 	sent := map[uint64]string{} // offset -> payload
@@ -221,7 +242,7 @@ func TestSequencerConcurrentWriters(t *testing.T) {
 // handler turns ErrBusy into 429 with Retry-After: backpressure, not failure.
 func TestSequencerBusy(t *testing.T) {
 	f := blockingLog()
-	s := startSequencer(t, f, 1)
+	s := startSequencer(t, f, always(1))
 
 	first := goAppend(s, context.Background())
 	waitEntered(t, f) // the sequencer is now stuck inside Append
@@ -244,7 +265,7 @@ func TestSequencerBusy(t *testing.T) {
 // trying to hand it a result nobody will read.
 func TestSequencerCallerGivesUp(t *testing.T) {
 	f := blockingLog()
-	s := startSequencer(t, f, 4)
+	s := startSequencer(t, f, always(4))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	gaveUp := goAppend(s, ctx)
@@ -264,7 +285,7 @@ func TestSequencerCallerGivesUp(t *testing.T) {
 // is safe.
 func TestSequencerClose(t *testing.T) {
 	f := blockingLog()
-	s := NewSequencer(f, 4)
+	s := NewSequencer(f, always(4))
 
 	first := goAppend(s, context.Background())
 	waitEntered(t, f)

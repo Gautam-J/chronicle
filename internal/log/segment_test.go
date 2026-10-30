@@ -23,7 +23,7 @@ func rec(off uint64) record.Record {
 	}
 }
 
-func encodedLen(t *testing.T, r record.Record) int {
+func encodedLen(t testing.TB, r record.Record) int {
 	t.Helper()
 	b, err := record.Encode(r)
 	if err != nil {

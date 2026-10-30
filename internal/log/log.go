@@ -84,10 +84,15 @@ func (l *Log) Append(r record.Record) (uint64, error) {
 	now := l.opts.Now()
 
 	if active.size() > 0 && (active.size() >= l.opts.MaxSegmentBytes || now.Sub(l.firstAt) >= l.opts.MaxSegmentAge) {
+		if err := active.sync(); err != nil {
+			return 0, err
+		}
+
 		seg, err := newSegment(l.dir, l.next, l.opts.IndexInterval)
 		if err != nil {
 			return 0, err
 		}
+
 		l.segments = append(l.segments, seg)
 		active = seg
 	}
@@ -123,4 +128,11 @@ func (l *Log) Close() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// Sync forces the active segment's writes from the OS page cache to the disk.
+// Until it returns nil, a power cut can lose them.
+func (l *Log) Sync() error {
+	active := l.segments[len(l.segments)-1]
+	return active.sync()
 }

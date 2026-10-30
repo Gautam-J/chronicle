@@ -141,3 +141,7 @@ func (s *segment) size() int64 {
 func (s *segment) close() error {
 	return errors.Join(s.log.Close(), s.idx.Close())
 }
+
+func (s *segment) sync() error {
+	return errors.Join(s.log.Sync(), s.idx.Sync())
+}

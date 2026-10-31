@@ -188,6 +188,58 @@ func TestSegmentReadCorruptLen(t *testing.T) {
 	}
 }
 
+// read hops over the records before the one it wants using only their len
+// fields. A bad CRC in a record it hops over is not its business; reading
+// that record itself still fails.
+func TestSegmentReadSkipsBadRecord(t *testing.T) {
+	s, dir := openSegment(t, 0, 1<<20) // one index entry, so read hops over 0 and 1
+	appendRange(t, s, 0, 3)
+	corruptAt(t, filepath.Join(dir, "00000000000000000000.log"), int64(encodedLen(t, rec(0))-40), 0x01)
+
+	checkRead(t, s, 2)
+	if _, err := s.read(0); !errors.Is(err, record.ErrChecksum) {
+		t.Errorf("read(0) error = %v, want record.ErrChecksum", err)
+	}
+}
+
+// A corrupt len that still fits in the file can make the hops land exactly
+// on a later, valid record. read must notice the offset is wrong instead of
+// returning that record.
+func TestSegmentReadLenLandsOnWrongRecord(t *testing.T) {
+	s, dir := openSegment(t, 0, 1<<20)
+	appendRange(t, s, 0, 4)
+	recLen := encodedLen(t, rec(0))
+
+	// Make record 0 claim to span records 0 and 1, so two hops reach record 3.
+	var b [4]byte
+	binary.LittleEndian.PutUint32(b[:], uint32(2*recLen-4))
+	f, err := os.OpenFile(filepath.Join(dir, "00000000000000000000.log"), os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteAt(b[:], 0); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	got, err := s.read(2)
+	if err == nil {
+		t.Fatalf("read(2) returned offset %d with no error", got.Offset)
+	}
+}
+
+func corruptAt(t *testing.T, path string, at int64, mask byte) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b[at] ^= mask
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // The sparse index has one entry per interval bytes of log, not one per
 // record. Each entry must point at the start of the record it names.
 func TestSegmentSparseIndex(t *testing.T) {

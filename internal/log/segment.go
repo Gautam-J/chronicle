@@ -102,35 +102,40 @@ func (s *segment) read(off uint64) (record.Record, error) {
 
 	// binary search to get the closest pos in sorted entries list
 	j := sort.Search(len(s.entries), func(i int) bool { return s.entries[i].rel > rel })
-	pos := int64(s.entries[j-1].pos)
-
-	var h [4]byte
-	for {
-		if _, err := s.log.ReadAt(h[:], pos); err != nil {
-			return record.Record{}, err
-		}
-		n := binary.LittleEndian.Uint32(h[:])
-
-		if pos+4+int64(n) > s.sz {
-			return record.Record{}, fmt.Errorf("%w: len %d at byte %d", record.ErrCorrupt, n, pos)
-		}
-
-		buf := make([]byte, 4+n)
-		if _, err := s.log.ReadAt(buf, pos); err != nil {
-			return record.Record{}, err
-		}
-
-		rec, used, err := record.Decode(buf)
-		if err != nil {
-			return record.Record{}, err
-		}
-
-		if rec.Offset == off {
-			return rec, nil
-		}
-
-		pos += int64(used)
+	start := int64(s.entries[j-1].pos)
+	end := s.sz
+	if j < len(s.entries) {
+		end = int64(s.entries[j].pos)
 	}
+
+	buf := make([]byte, end-start)
+	if _, err := s.log.ReadAt(buf, start); err != nil {
+		return record.Record{}, err
+	}
+
+	p := 0
+	nHops := rel - s.entries[j-1].rel
+	for range nHops {
+		if len(buf)-p < 4 {
+			return record.Record{}, fmt.Errorf("%w: byte %d", record.ErrCorrupt, start+int64(p))
+		}
+
+		n := binary.LittleEndian.Uint32(buf[p:])
+		p += 4 + int(n)
+		if p > len(buf) {
+			return record.Record{}, fmt.Errorf("%w: len %d at byte %d", record.ErrCorrupt, n, start+int64(p))
+		}
+	}
+
+	r, _, err := record.Decode(buf[p:])
+	if err != nil {
+		return record.Record{}, err
+	}
+
+	if r.Offset != off {
+		return record.Record{}, fmt.Errorf("%w: offset mismatch at byte %d", record.ErrCorrupt, start+int64(p))
+	}
+	return r, nil
 }
 
 // size returns the bytes in the .log file.

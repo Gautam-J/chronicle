@@ -123,7 +123,7 @@ func tailFile(ctx context.Context, path string, out io.Writer) error {
 }
 
 func displayUsage() {
-	fmt.Fprintln(os.Stderr, "usage: chronicle serve | verify <log dir> | tail [path]")
+	fmt.Fprintln(os.Stderr, "usage: chronicle serve | verify <log dir> | import <points.jsonl> <log dir> | tail [path]")
 }
 
 func main() {
@@ -142,6 +142,16 @@ func main() {
 		}
 
 		if err := verifyLog(os.Args[2], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case "import":
+		if len(os.Args) != 4 {
+			displayUsage()
+			os.Exit(2)
+		}
+
+		if err := runImport(os.Args[2], os.Args[3]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

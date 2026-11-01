@@ -29,6 +29,7 @@ type Log struct {
 	segments []*segment // oldest first; the last one is active
 	next     uint64
 	firstAt  time.Time
+	last     [32]byte
 }
 
 // withDefaults returns o with every zero field set to its default.
@@ -137,6 +138,16 @@ func Open(dir string, o Options) (*Log, error) {
 
 	l.next = l.segments[len(l.segments)-1].next
 	l.firstAt = o.Now()
+
+	if l.next > 0 {
+		r, err := l.Read(l.next - 1)
+		if err != nil {
+			return fail(err)
+		}
+
+		l.last = r.Hash
+	}
+
 	return l, nil
 }
 
@@ -168,10 +179,19 @@ func (l *Log) Append(r record.Record) (uint64, error) {
 	}
 
 	r.Offset = l.next
+	r.PrevHash = l.last
+
+	h, err := record.ChainHash(r)
+	if err != nil {
+		return 0, err
+	}
+	r.Hash = h
+
 	if err := active.append(r); err != nil {
 		return 0, err
 	}
 
+	l.last = r.Hash
 	l.next++
 	return r.Offset, nil
 }

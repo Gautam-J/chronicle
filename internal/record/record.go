@@ -5,6 +5,7 @@ package record
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"hash/crc32"
@@ -149,4 +150,24 @@ func Decode(b []byte) (Record, int, error) {
 	copy(r.Hash[:], p[32:])
 
 	return r, 4 + n, nil
+}
+
+// ChainHash returns SHA-256(prev_hash || every byte from ver up to
+// and including payload): the bytes of Encode without len, crc, and the 2 hashes
+func ChainHash(r Record) ([32]byte, error) {
+	b, err := Encode(r)
+	if err != nil {
+		return [32]byte{}, err
+	}
+
+	h := sha256.New()
+	if _, err := h.Write(r.PrevHash[:]); err != nil {
+		return [32]byte{}, err
+	}
+
+	if _, err := h.Write(b[8 : len(b)-64]); err != nil {
+		return [32]byte{}, err
+	}
+
+	return [32]byte(h.Sum(nil)), nil
 }

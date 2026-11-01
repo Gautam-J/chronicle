@@ -150,3 +150,76 @@ func (s *segment) close() error {
 func (s *segment) sync() error {
 	return errors.Join(s.log.Sync(), s.idx.Sync())
 }
+
+// recover rebuilds next, sz, and index from the .log, and returns
+// how many bytes follow the last good record
+func (s *segment) recover() (int64, error) {
+	fi, err := s.log.Stat()
+	if err != nil {
+		return 0, err
+	}
+
+	size := fi.Size()
+	s.entries = make([]entry, 0)
+	s.sz = 0
+	s.next = s.base
+	s.lastIndexed = 0
+
+	var h [4]byte
+	for size-s.sz >= 4 {
+		if _, err := s.log.ReadAt(h[:], s.sz); err != nil {
+			return 0, err
+		}
+
+		n := binary.LittleEndian.Uint32(h[:])
+		if s.sz+4+int64(n) > size {
+			break
+		}
+
+		buf := make([]byte, 4+n)
+		if _, err := s.log.ReadAt(buf, s.sz); err != nil {
+			return 0, err
+		}
+
+		r, used, err := record.Decode(buf)
+		if err != nil || r.Offset != s.next {
+			break
+		}
+
+		if len(s.entries) == 0 || s.sz-s.lastIndexed >= int64(s.interval) {
+			e := entry{
+				rel: uint32(s.next - s.base),
+				pos: uint32(s.sz),
+			}
+			s.entries = append(s.entries, e)
+			s.lastIndexed = s.sz
+		}
+
+		s.sz += int64(used)
+		s.next++
+	}
+
+	if err := s.idx.Truncate(0); err != nil {
+		return 0, err
+	}
+
+	out := make([]byte, 0, 8*len(s.entries))
+	for _, e := range s.entries {
+		out = binary.LittleEndian.AppendUint32(out, e.rel)
+		out = binary.LittleEndian.AppendUint32(out, e.pos)
+	}
+
+	if _, err := s.idx.Write(out); err != nil {
+		return 0, err
+	}
+
+	return size - s.sz, nil
+}
+
+// truncate cuts the .log back to the last good record and fsyncs it
+func (s *segment) truncate() error {
+	if err := s.log.Truncate(s.sz); err != nil {
+		return err
+	}
+	return s.log.Sync()
+}

@@ -5,12 +5,18 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Gautam-J/chronicle/internal/record"
+)
+
+var (
+	ErrLocked = errors.New("log: directory locked")
 )
 
 // Options configure a Log. A zero field means "use the default".
@@ -30,6 +36,7 @@ type Log struct {
 	next     uint64
 	firstAt  time.Time
 	last     [32]byte
+	lock     *os.File
 }
 
 // withDefaults returns o with every zero field set to its default.
@@ -74,6 +81,16 @@ func Open(dir string, o Options) (*Log, error) {
 	fail := func(err error) (*Log, error) {
 		l.Close()
 		return nil, err
+	}
+
+	lock, err := os.OpenFile(filepath.Join(dir, "LOCK"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return fail(err)
+	}
+	l.lock = lock
+
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		return fail(fmt.Errorf("%w: %s: %v", ErrLocked, dir, err))
 	}
 
 	des, err := os.ReadDir(dir)
@@ -212,6 +229,11 @@ func (l *Log) Close() error {
 		if err := s.close(); err != nil {
 			errs = append(errs, err)
 		}
+	}
+
+	if l.lock != nil {
+		err := l.lock.Close()
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }

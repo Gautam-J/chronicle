@@ -6,6 +6,8 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Gautam-J/chronicle/internal/record"
@@ -63,17 +65,78 @@ func Open(dir string, o Options) (*Log, error) {
 		return nil, err
 	}
 
-	seg, err := newSegment(dir, 0, o.IndexInterval)
+	l := &Log{
+		dir:  dir,
+		opts: o,
+	}
+
+	fail := func(err error) (*Log, error) {
+		l.Close()
+		return nil, err
+	}
+
+	des, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	l := &Log{
-		dir:      dir,
-		opts:     o,
-		segments: []*segment{seg},
+	names := make([]string, 0, len(des))
+	for _, de := range des {
+		name, ok := strings.CutSuffix(de.Name(), ".log")
+		if !ok {
+			continue
+		}
+		names = append(names, name)
 	}
 
+	for i, name := range names {
+		base, err := strconv.ParseUint(name, 10, 64)
+		if err != nil {
+			return fail(err)
+		}
+
+		if len(l.segments) != 0 && l.segments[len(l.segments)-1].next != base {
+			prev := l.segments[len(l.segments)-1]
+			return fail(fmt.Errorf("%w: segment %d ends at offset %d, next segment starts at %d", record.ErrCorrupt, prev.base, prev.next, base))
+		}
+
+		seg, err := newSegment(dir, base, o.IndexInterval)
+		if err != nil {
+			return fail(err)
+		}
+
+		l.segments = append(l.segments, seg)
+
+		torn, err := seg.recover()
+		if err != nil {
+			return fail(err)
+		}
+
+		if torn > 0 && i < len(names)-1 {
+			return fail(fmt.Errorf("%w: sealed segment %d has %d bad bytes", record.ErrCorrupt, base, torn))
+		}
+
+		if torn > 0 {
+			if err := seg.truncate(); err != nil {
+				return fail(err)
+			}
+		}
+	}
+
+	if len(l.segments) == 0 {
+		seg, err := newSegment(dir, 0, o.IndexInterval)
+		if err != nil {
+			return fail(err)
+		}
+
+		l.segments = append(l.segments, seg)
+		if err := syncDir(dir); err != nil {
+			return fail(err)
+		}
+	}
+
+	l.next = l.segments[len(l.segments)-1].next
+	l.firstAt = o.Now()
 	return l, nil
 }
 
@@ -94,6 +157,9 @@ func (l *Log) Append(r record.Record) (uint64, error) {
 		}
 
 		l.segments = append(l.segments, seg)
+		if err := syncDir(l.dir); err != nil {
+			return 0, err
+		}
 		active = seg
 	}
 
@@ -135,4 +201,12 @@ func (l *Log) Close() error {
 func (l *Log) Sync() error {
 	active := l.segments[len(l.segments)-1]
 	return active.sync()
+}
+
+func syncDir(dir string) error {
+	fd, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	return errors.Join(fd.Sync(), fd.Close())
 }

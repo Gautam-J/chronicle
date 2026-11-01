@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Gautam-J/chronicle/internal/jsonl"
+	chlog "github.com/Gautam-J/chronicle/internal/log"
 	"github.com/Gautam-J/chronicle/internal/owntracks"
 )
 
@@ -82,6 +83,49 @@ func serve() {
 	}
 }
 
+func verifyLog(dir string, out io.Writer) error {
+	if _, err := os.Stat(dir); err != nil {
+		return err
+	}
+
+	opts := chlog.Options{}
+	l, err := chlog.Open(dir, opts)
+	if err != nil {
+		return err
+	}
+	defer l.Close()
+
+	n, err := l.Verify()
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, "ok: %d records, hash chain intact\n", n)
+	return nil
+}
+
+func tailFile(ctx context.Context, path string, out io.Writer) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+	_, err = f.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
+	}
+
+	err = jsonl.Follow(ctx, f, 500*time.Millisecond, func(line []byte) {
+		fmt.Fprintf(out, "%s\n", line)
+	})
+	return err
+}
+
+func displayUsage() {
+	fmt.Fprintln(os.Stderr, "usage: chronicle serve | verify <log dir> | tail [path]")
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		displayUsage()
@@ -91,6 +135,16 @@ func main() {
 	switch os.Args[1] {
 	case "serve":
 		serve()
+	case "verify":
+		if len(os.Args) != 3 {
+			displayUsage()
+			os.Exit(2)
+		}
+
+		if err := verifyLog(os.Args[2], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	case "tail":
 		path := "data/points.jsonl"
 		if v := os.Getenv("CHRONICLE_DATA"); v != "" {
@@ -112,26 +166,4 @@ func main() {
 		displayUsage()
 		os.Exit(2)
 	}
-}
-
-func displayUsage() {
-	fmt.Fprintln(os.Stderr, "usage: chronicle serve | tail [path]")
-}
-
-func tailFile(ctx context.Context, path string, out io.Writer) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-
-	defer f.Close()
-	_, err = f.Seek(0, io.SeekEnd)
-	if err != nil {
-		return err
-	}
-
-	err = jsonl.Follow(ctx, f, 500*time.Millisecond, func(line []byte) {
-		fmt.Fprintf(out, "%s\n", line)
-	})
-	return err
 }

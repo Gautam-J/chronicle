@@ -17,6 +17,7 @@ import (
 
 var (
 	ErrLocked = errors.New("log: directory locked")
+	ErrChain  = errors.New("log: hash chain corrupt")
 )
 
 // Options configure a Log. A zero field means "use the default".
@@ -243,6 +244,36 @@ func (l *Log) Close() error {
 func (l *Log) Sync() error {
 	active := l.segments[len(l.segments)-1]
 	return active.sync()
+}
+
+// Verify returns how many records it checked for ChainHash,
+// or the offset where the chain breaks
+func (l *Log) Verify() (uint64, error) {
+	var prev [32]byte
+
+	for off := range l.next {
+		r, err := l.Read(off)
+		if err != nil {
+			return off, fmt.Errorf("offset %d: %w", off, err)
+		}
+
+		if r.PrevHash != prev {
+			return off, fmt.Errorf("%w at offset %d: prev_hash does not match the hash of offset %d", ErrChain, off, int64(off)-1)
+		}
+
+		h, err := record.ChainHash(r)
+		if err != nil {
+			return off, err
+		}
+
+		if r.Hash != h {
+			return off, fmt.Errorf("%w at offset %d: record does not match its hash", ErrChain, off)
+		}
+
+		prev = r.Hash
+	}
+
+	return l.next, nil
 }
 
 func syncDir(dir string) error {

@@ -65,6 +65,9 @@ func main() {
 	for off, payload := range acked {
 		verify(l, 0, off, payload)
 	}
+	if _, err := l.Verify(); err != nil {
+		fail("hash chain after %d kills: %v", *runs, err)
+	}
 	l.Close()
 
 	fmt.Printf("ok: %d kills, %d acknowledged records all present\n", *runs, len(acked))

@@ -5,7 +5,7 @@ iOS app posts each location point over HTTP. Chronicle appends each one to a
 log on the Pi.
 
 Chronicle is also a learning project: each milestone builds the ideas of one
-or more chapters of *Designing Data-Intensive Applications* (1st ed.) from the
+or more chapters of *Designing Data-Intensive Applications* (2nd ed.) from the
 standard library up. This README records what each milestone built and how.
 The design and the roadmap live in the
 [design doc](https://claude.ai/code/artifact/b506277b-93bf-4e40-92e9-61c85b44f2c5).
@@ -79,7 +79,7 @@ Each bug fix starts with a failing test.
 ### Known limits (for later milestones)
 
 - No `fsync`. A `200` means the line reached the kernel's page cache, not the
-  disk. A power cut can lose the most recent points. (DDIA ch. 3 and 7.)
+  disk. A power cut can lose the most recent points. (DDIA ch. 4 and 8.)
 - JSON lines are slow to scan and have no index. M1 replaces this file with a
   binary segment log.
 

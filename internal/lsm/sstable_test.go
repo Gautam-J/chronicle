@@ -2,10 +2,12 @@ package lsm
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"iter"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -214,8 +216,8 @@ func TestTableDetectsCorruption(t *testing.T) {
 		wantGet(t, tb, numKey(4999), numVal(4999)) // other blocks still read
 	})
 
-	// The index is the last thing before the 16-byte footer, and the footer
-	// ends with a magic number.
+	// The index is the last thing before the footer, and the footer ends with
+	// a magic number.
 	for name, at := range map[string]func(int) int{
 		"index":  func(size int) int { return size - footerSize - 5 },
 		"footer": func(size int) int { return size - 1 },
@@ -229,6 +231,26 @@ func TestTableDetectsCorruption(t *testing.T) {
 		})
 	}
 
+	// A damaged filter could say "absent" for a key that is there, a silent
+	// lost read. Its CRC must stop OpenTable.
+	t.Run("filter", func(t *testing.T) {
+		path := writeTable(t, numbered(5000))
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		foot := b[len(b)-footerSize:]
+		ioff := binary.LittleEndian.Uint64(foot[0:])
+		flen := uint64(binary.LittleEndian.Uint32(foot[12:]))
+		if flen < 100 {
+			t.Fatalf("filter is %d bytes for 5000 keys; footer layout: index offset u64, index length u32, filter length u32, magic u32", flen)
+		}
+		flip(t, path, func(int) int { return int(ioff - flen + 10) })
+		if _, err := OpenTable(path); !errors.Is(err, ErrCorrupt) {
+			t.Errorf("OpenTable with a damaged filter = %v, want ErrCorrupt", err)
+		}
+	})
+
 	t.Run("truncated", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "short.sst")
 		if err := os.WriteFile(path, []byte("tiny"), 0o600); err != nil {
@@ -239,4 +261,48 @@ func TestTableDetectsCorruption(t *testing.T) {
 			t.Errorf("OpenTable = %v, want ErrCorrupt naming the file", err)
 		}
 	})
+}
+
+// A miss inside the table's key range would read a block to find nothing.
+// The Bloom filter answers "definitely not here" from memory instead, wrong
+// about 1% of the time at 10 bits per key.
+func TestTableBloomSkipsMisses(t *testing.T) {
+	tb := openTable(t, writeTable(t, numbered(5000)))
+	const misses = 20000
+	before := tb.blockReads
+	for i := range misses {
+		wantMiss(t, tb, fmt.Appendf(nil, "key%06d-%d", i%5000, i)) // between real keys
+	}
+	reads := tb.blockReads - before
+	rate := float64(reads) / misses
+	t.Logf("false positives: %d of %d misses (%.2f%%)", reads, misses, 100*rate)
+	if rate > 0.02 {
+		t.Errorf("%d of %d misses read a block (%.2f%%), want under 2%%", reads, misses, 100*rate)
+	}
+	// No false negatives: every real key still reads its block.
+	for i := range 5000 {
+		wantGet(t, tb, numKey(i), numVal(i))
+	}
+}
+
+// Every restart reads filters another process wrote. A hash seeded per
+// process (hash/maphash, Go's map hash) passes every in-process test and
+// then says "absent" for keys that exist. Write in a child process, read here.
+func TestTableFilterWorksAcrossProcesses(t *testing.T) {
+	if path := os.Getenv("LSM_TEST_WRITE_TABLE"); path != "" {
+		if err := WriteTable(path, numbered(2000)); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	path := filepath.Join(t.TempDir(), "child.sst")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestTableFilterWorksAcrossProcesses$")
+	cmd.Env = append(os.Environ(), "LSM_TEST_WRITE_TABLE="+path)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("child process: %v\n%s", err, out)
+	}
+	tb := openTable(t, path)
+	for i := range 2000 {
+		wantGet(t, tb, numKey(i), numVal(i))
+	}
 }

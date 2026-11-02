@@ -83,6 +83,16 @@ Each bug fix starts with a failing test.
 - JSON lines are slow to scan and have no index. M1 replaces this file with a
   binary segment log.
 
+## M1: binary segment log (in progress)
+
+### Writing a record
+
+![M1 write path: a producer calls Sequencer.Append, which queues a request with a reply channel. The sequencer goroutine collects a batch, then calls Log.Append for each record: roll to a new segment if the active one is full or old, set the offset and previous hash, compute the chain hash, encode the record, write a sparse index entry if due, and write the bytes to .log. One fsync covers the batch, then each producer gets its offset on its reply channel](docs/m1_produce.svg)
+
+### Reading a record
+
+![M1 read path: a consumer calls Log.Read(offset). A binary search over segment base offsets picks the segment, a binary search over its in-memory index entries gives the closest byte position, a forward pass over .log reaches the target, and Decode checks it before the record is returned](docs/m1_consume.svg)
+
 ## Run it
 
 ```sh
